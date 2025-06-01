@@ -14,30 +14,32 @@ def hex_to_rgb(hex_color):
     hex_color = hex_color.lstrip('#')  # Elimina el '#' inicial si existe
     if len(hex_color) != 6:
         raise ValueError("El código HEX debe tener 6 caracteres.")
-    # Convierte cada par de caracteres HEX a su valor decimal
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+# Función para convertir RGB a HEX (útil para mostrar colores al usuario)
+def rgb_to_hex(rgb_color):
+    # Asegúrate de que los valores sean enteros antes de formatear a HEX y que estén entre 0 y 255
+    r, g, b = np.clip(rgb_color, 0, 255).astype(int)
+    return '#{:02x}{:02x}{:02x}'.format(r, g, b)
 
 
 # 1. Solicitar la ruta de la imagen al usuario
 ruta_img = input("📂 Ingrese la ruta de la imagen (por defecto: Imagenes/reloj.jpeg): ").strip()
 if ruta_img == "":
-    ruta_img = os.path.join("Imagenes", "reloj.jpeg")  # Ruta por defecto
+    ruta_img = os.path.join("Imagenes", "reloj.jpeg")
 
-# Verificar si el archivo de imagen existe en la ruta proporcionada
 if not os.path.isfile(ruta_img):
     print(f"❌ No se encontró la imagen en: {ruta_img}")
-    exit()  # Sale del programa si la imagen no se encuentra
+    sys.exit()
 
-# 2. Cargar la imagen y redimensionarla si excede el tamaño máximo
-img = Image.open(ruta_img).convert("RGBA")  # Carga la imagen y la convierte a formato RGBA (con canal alfa)
-width, height = img.size  # Obtiene las dimensiones originales antes de redimensionar
-# Si la imagen es más grande que el tamaño máximo permitido, la redimensiona
+# 2. Cargar imagen y redimensionar si es muy grande
+img = Image.open(ruta_img).convert("RGBA")
+width, height = img.size  # Obtiene las dimensiones de la imagen
 if img.size[0] > MAX_SIZE[0] or img.size[1] > MAX_SIZE[1]:
-    img.thumbnail(MAX_SIZE, Image.LANCZOS)  # Redimensiona usando un filtro de alta calidad
-    # Actualiza width y height para el nuevo tamaño
-    width, height = img.size
+    img.thumbnail(MAX_SIZE, Image.LANCZOS)
+    width, height = img.size  # Actualiza las dimensiones si se redimensionó
 
-# Convierte la imagen a un array de NumPy para manipulación de píxeles
 pixels = np.array(img)
 
 # --- INICIO: SEGMENTACIÓN DEL OBJETO CON K-MEANS ---
@@ -46,18 +48,16 @@ pixels = np.array(img)
 data = pixels[:, :, 0:3].reshape(-1, 3).astype(np.float64)
 
 # Número de clusters (grupos de colores) que K-means intentará encontrar.
-n_clusters = 4
-print("\n🧠 Realizando segmentación por colores (K-means)... esto puede tomar un momento.")
+n_clusters = 8  # Ajustado para mayor granularidad de color
+print(f"\n🧠 Realizando segmentación por colores (K-means) con {n_clusters} clusters... esto puede tomar un momento.")
 kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init=10)
 kmeans.fit(data)
 labels = kmeans.labels_  # Etiqueta de cluster para cada píxel
 centers = kmeans.cluster_centers_  # Colores promedio de cada cluster (RGB)
 print("🧠 Segmentación K-means completada.")
 
-# Crear una máscara inicial vacía
-mask_np = np.zeros((height, width), dtype=np.uint8)
-
-# Identificar los cluster(s) que pertenecen al fondo (basado en los píxeles de las esquinas)
+# --- IDENTIFICAR CLUSTERS DE FONDO Y OBJETO ---
+# Heurística: asumimos que los píxeles de las esquinas pertenecen al fondo.
 corner_pixels_colors = [
     pixels[0, 0, 0:3],  # Arriba-izquierda
     pixels[0, width - 1, 0:3],  # Arriba-derecha
@@ -69,56 +69,110 @@ background_cluster_labels = set()
 for color in corner_pixels_colors:
     background_cluster_labels.add(kmeans.predict([color.astype(np.float64)])[0])
 
-# Llenar la máscara: los píxeles que pertenecen a los clusters de fondo se marcan con 255
-is_background_pixels_raw = np.isin(labels, list(background_cluster_labels)).reshape(height, width)
-mask_np[is_background_pixels_raw] = 255
+# Identificar los clusters que no son de fondo (es decir, son del objeto)
+all_cluster_ids = set(range(n_clusters))
+object_cluster_labels = list(all_cluster_ids - background_cluster_labels)
 
-# Aplicar operaciones morfológicas y suavizado a la máscara para limpiarla
+# Crear la máscara de fondo/objeto (necesaria para el anti-aliasing y transparencia)
+print("✨ Creando máscara de fondo/objeto para el anti-aliasing...")
+mask_np = np.zeros((height, width), dtype=np.uint8)
+is_background_pixels_raw = np.isin(labels, list(background_cluster_labels)).reshape(height, width)
+mask_np[is_background_pixels_raw] = 255  # Pixeles de fondo en 255 en la máscara
+
+# Aplicar operaciones morfológicas y suavizado a la máscara para limpiarla y suavizar bordes
 kernel_open = np.ones((5, 5), np.uint8)
 kernel_close = np.ones((7, 7), np.uint8)
-
 mask_np = cv2.morphologyEx(mask_np, cv2.MORPH_OPEN, kernel_open, iterations=1)
 mask_np = cv2.morphologyEx(mask_np, cv2.MORPH_CLOSE, kernel_close, iterations=1)
-mask_np = cv2.GaussianBlur(mask_np, (5, 5), 0)
+mask_np = cv2.GaussianBlur(mask_np, (5, 5), 0)  # Suavizar la máscara
+print("✨ Máscara de fondo/objeto creada.")
 
 # --- FIN: SEGMENTACIÓN DEL OBJETO CON K-MEANS ---
 
 
 # --- INICIO: PREGUNTAS DE TRANSFORMACIÓN Y APLICACIÓN DE CAMBIOS ---
 
-# Preguntar si se desea cambiar el color del objeto
-cambiar_color_input = input("\n🎨 ¿Deseas cambiar el color del objeto? (sí/no): ").strip().lower()
-cambiar_color = cambiar_color_input in ['si', 'sí', 's', 'yes', 'y']
-
-nuevo_color_objeto = None
-if cambiar_color:
-    # Solicitar el color HEX para pintar el OBJETO solo si se elige cambiar el color
-    hex_color = input("🎨 Ingrese un color HEX para pintar el OBJETO (ejemplo: #2471a3): ").strip()
-    try:
-        nuevo_color_objeto = np.array(hex_to_rgb(hex_color)).astype(np.float64)
-    except Exception as e:
-        print(f"❌ Error en el color HEX para el objeto: {e}")
-        exit()
-
 # Preguntar si se desea quitar el fondo
-quitar_fondo_input = input("❓ ¿Deseas quitar el fondo (hacerlo transparente)? (sí/no): ").strip().lower()
+quitar_fondo_input = input("\n❓ ¿Deseas quitar el fondo (hacerlo transparente)? (sí/no): ").strip().lower()
 quitar_fondo = quitar_fondo_input in ['si', 'sí', 's', 'yes', 'y']
+
+# --- NUEVA PREGUNTA: PRESERVAR BLANCOS ---
+preserve_white_input = input("\n⚪ ¿Deseas preservar los colores blancos dentro del objeto? (sí/no): ").strip().lower()
+preserve_white = preserve_white_input in ['si', 'sí', 's', 'yes', 'y']
+# Define el color blanco puro y la tolerancia para considerarlo "blanco"
+white_rgb_fixed = np.array([255.0, 255.0, 255.0])
+white_threshold = 30  # Ajusta este valor. Cuanto más bajo, más estricto con el blanco.
+
+# Diccionario para guardar las reglas de cambio de color: cluster_id -> nuevo_color_rgb
+recolor_map = {}
+
+print("\n--- Colores detectados en el OBJETO principal (Clusters) ---")
+if not object_cluster_labels:
+    print(
+        "⚠️ No se detectaron clusters de objeto distintivos. El objeto podría ser muy uniforme o no detectarse correctamente.")
+    print("   El objeto mantendrá sus colores originales.")
+else:
+    for cluster_id in object_cluster_labels:
+        center_rgb = centers[cluster_id]
+        print(
+            f"  Cluster {cluster_id}: RGB({int(center_rgb[0])},{int(center_rgb[1])},{int(center_rgb[2])}) - HEX({rgb_to_hex(center_rgb)})")
+
+    # Pedir al usuario cuántos colores quiere cambiar
+    num_cambios_input = input(
+        f"\n🎨 ¿Cuántas partes/colores específicos del objeto quieres cambiar? (0 para no cambiar): ").strip()
+    try:
+        num_cambios = int(num_cambios_input)
+    except ValueError:
+        num_cambios = 0  # Si no es un número válido, no se hacen cambios
+
+    if num_cambios > 0:
+        clusters_a_procesar = list(object_cluster_labels)  # Crear una copia de los IDs de los clusters de objeto
+
+        for i in range(min(num_cambios, len(clusters_a_procesar))):
+            target_cluster_id = clusters_a_procesar[i]  # Tomar el siguiente cluster de la lista
+
+            print(f"\n--- Configurando cambio {i + 1} de {num_cambios} ---")
+
+            center_rgb_target = centers[target_cluster_id]
+            print(f"  Cluster a cambiar: {target_cluster_id}")
+            print(
+                f"  Color actual: RGB({int(center_rgb_target[0])},{int(center_rgb_target[1])},{int(center_rgb_target[2])}) - HEX({rgb_to_hex(center_rgb_target)})")
+
+            new_hex_color = input(
+                f"  Ingrese el NUEVO color HEX para el Cluster {target_cluster_id} (o dejar vacío para no cambiar este cluster): ").strip()
+            if new_hex_color:  # Si el usuario ingresó algo
+                try:
+                    new_rgb_color = np.array(hex_to_rgb(new_hex_color)).astype(np.float64)
+                    recolor_map[target_cluster_id] = new_rgb_color
+                    print(f"  ✅ Cluster {target_cluster_id} marcado para cambiar a {new_hex_color}.")
+                except Exception as e:
+                    print(f"  ❌ Error en el color HEX: {e}. Este cambio no se aplicará.")
+            else:
+                print(f"  ✅ Cluster {target_cluster_id} mantendrá su color original.")
+    else:  # num_cambios es 0 o inválido
+        print("   ✅ El objeto principal mantendrá sus colores originales.")
 
 # Crear un nuevo array de píxeles para el resultado, trabajando en float64
 result_pixels = np.copy(pixels).astype(np.float64)
 
-# 3. Procesar cada píxel de la imagen con barra de progreso
+# Procesar cada píxel de la imagen con barra de progreso
 print("\n🔄 Aplicando transformaciones a la imagen...")
-for i in range(height):  # Usamos 'height' como el total de filas
-    # Calcula el porcentaje de progreso y lo imprime en la misma línea
-    porcentaje = int((i + 1) / height * 100)
+total_filas = height
+
+for i in range(total_filas):
+    porcentaje = int((i + 1) / total_filas * 100)
     print(f"\rProgreso: {porcentaje}% completado", end="")
-    sys.stdout.flush()  # Fuerza la actualización de la salida en consola
+    sys.stdout.flush()
 
-    for j in range(width):  # Iteramos por columnas
+    for j in range(width):
         r_orig, g_orig, b_orig, a_orig = pixels[i, j]
+        pixel_rgb_orig = np.array([r_orig, g_orig, b_orig]).astype(np.float64)
 
-        mask_value = mask_np[i, j]  # El valor de la máscara para este píxel (0=objeto, 255=fondo)
+        # Obtener el cluster al que pertenece este píxel
+        pixel_cluster_id = labels[i * width + j]
+
+        # El valor de la máscara para este píxel (0=objeto, 255=fondo)
+        mask_value = mask_np[i, j]
 
         # Si el píxel ya era transparente en la imagen original, y no vamos a quitar el fondo, lo mantenemos así
         if a_orig == 0 and not quitar_fondo:
@@ -130,45 +184,50 @@ for i in range(height):  # Usamos 'height' como el total de filas
 
         # --- APLICACIÓN DE ALFA (TRANSPARENCIA) ---
         if quitar_fondo:
+            # El alfa final se basa en el alfa original y el factor de opacidad del objeto
             result_pixels[i, j, 3] = a_orig * object_opacity_factor
         else:
-            result_pixels[i, j, 3] = a_orig
+            result_pixels[i, j, 3] = a_orig  # Si no se quita el fondo, mantener el alfa original
 
         # --- APLICACIÓN DE COLOR ---
-        if object_opacity_factor > 0:  # Si hay alguna presencia del objeto en este píxel
-            if cambiar_color:
-                color_para_pintar_objeto_mezcla = nuevo_color_objeto
+        if object_opacity_factor > 0:  # Solo aplicar cambios si es parte del objeto (o transición)
+            # --- NUEVA LÓGICA: PRESERVAR BLANCOS ---
+            if preserve_white and np.linalg.norm(pixel_rgb_orig - white_rgb_fixed) < white_threshold:
+                result_pixels[i, j, 0:3] = white_rgb_fixed  # Fuerza el píxel a blanco puro
+            elif pixel_cluster_id in recolor_map:
+                # Si el cluster de este píxel está en el mapa de colores a cambiar
+                target_color = recolor_map[pixel_cluster_id]
 
-                # Mezcla del nuevo color con el color original del píxel
-                result_pixels[i, j, 0] = (color_para_pintar_objeto_mezcla[0] * object_opacity_factor) + (
-                            r_orig * (1 - object_opacity_factor))
-                result_pixels[i, j, 1] = (color_para_pintar_objeto_mezcla[1] * object_opacity_factor) + (
-                            g_orig * (1 - object_opacity_factor))
-                result_pixels[i, j, 2] = (color_para_pintar_objeto_mezcla[2] * object_opacity_factor) + (
-                            b_orig * (1 - object_opacity_factor))
-            # Si no se quiere cambiar el color, el color RGB se mantiene como el original (ya lo es en result_pixels)
-        # Si object_opacity_factor es 0 (fondo puro), el color RGB se mantiene como el original del fondo.
+                # Mezclar el nuevo color con el color original del píxel para el anti-aliasing y mantener textura
+                result_pixels[i, j, 0] = (target_color[0] * object_opacity_factor) + (
+                            pixel_rgb_orig[0] * (1 - object_opacity_factor))
+                result_pixels[i, j, 1] = (target_color[1] * object_opacity_factor) + (
+                            pixel_rgb_orig[1] * (1 - object_opacity_factor))
+                result_pixels[i, j, 2] = (target_color[2] * object_opacity_factor) + (
+                            pixel_rgb_orig[2] * (1 - object_opacity_factor))
+            else:
+                # Si el píxel es objeto/transición pero su cluster no está mapeado para cambiar, mantener su color original
+                result_pixels[i, j, 0:3] = pixel_rgb_orig
+                # Si object_opacity_factor es 0 (fondo puro), el color RGB se mantiene como el original del fondo.
 
-# Convertir el array de píxeles modificado de float a uint8 antes de crear la imagen PIL
+# Convertir el array de píxeles modificado de float a uint8
 result_pixels = result_pixels.astype(np.uint8)
-new_img = Image.fromarray(result_pixels, mode="RGBA")
+final_pil_img = Image.fromarray(result_pixels, mode="RGBA")
 
 # Opcional: Aplicar un filtro de suavizado final si aún hay aspereza en los bordes
-# new_img = new_img.filter(ImageFilter.SMOOTH)
-# new_img = new_img.filter(ImageFilter.BoxBlur(0.5))
+# final_pil_img = final_pil_img.filter(ImageFilter.SMOOTH)
+# final_pil_img = final_pil_img.filter(ImageFilter.BoxBlur(0.5))
 
 # 4. Solicitar el nombre del archivo de salida y guardar la imagen
 nombre_archivo = input(
     "\n💾 Ingrese un nombre para la imagen de salida (sin extensión, por defecto: imagen_transformada): ").strip()
 if nombre_archivo == "":
-    nombre_archivo = "imagen_transformada"  # Nombre por defecto si no se ingresa nada
+    nombre_archivo = "imagen_transformada"
 
-output_dir = "Imagenes"  # Directorio de salida
-os.makedirs(output_dir, exist_ok=True)  # Crea el directorio si no existe
-output_path = os.path.join(output_dir, f"{nombre_archivo}.png")  # Construye la ruta completa del archivo
+output_dir = "Imagenes"
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, f"{nombre_archivo}.png")
 
-new_img.save(output_path)  # Guarda la imagen en la ruta especificada
-
-# Muestra la ruta donde se guardó la imagen y la abre
+final_pil_img.save(output_path)
 print(f"\n✅ Imagen procesada guardada en: {output_path}")
-new_img.show()  # Abre la imagen con el visor predeterminado del sistema
+final_pil_img.show()
