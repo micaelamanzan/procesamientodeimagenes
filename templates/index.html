@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Procesador de Imagen</title>
+  <script src="/static/script.js" defer></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px auto;
+      max-width: 800px;
+    }
+
+    h2, h4 { margin-bottom: 10px; }
+    .step { margin-bottom: 20px; }
+
+    #preview { max-width: 150px; max-height: 150px; display: none; margin-top: 10px; }
+
+    .color-box {
+      width: 45px;
+      height: 45px;
+      margin: 5px;
+      border: 2px solid transparent;
+      position: relative;
+      display: inline-block;
+    }
+
+    .color-box input {
+      position: absolute;
+      bottom: -30px;
+      width: 100%;
+    }
+
+    #colores { display: none; flex-wrap: wrap; }
+
+    #formulario-cambio { text-align: center; display: none; margin-top: 10px; }
+
+    #formulario-cambio button {
+      padding: 10px 18px;
+      font-size: 15px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    #loader { display: none; text-align: center; margin-top: 15px; }
+
+    #resultado { max-width: 250px; display: block; margin-top: 15px; }
+
+    #descargar {
+      display: none;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    #descargar a {
+      padding: 8px 16px;
+      background: #28a745;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+    }
+
+    label { display: block; margin: 5px 0; }
+  </style>
+</head>
+<body>
+
+  <h2>Procesador de Imagen</h2>
+
+  <div class="step">
+    <label><strong>1. Subí una imagen:</strong></label>
+    <input type="file" id="imagen" accept="image/*">
+    <img id="preview" src="">
+  </div>
+
+  <div class="step" id="opciones" style="display:none;">
+    <label><input type="checkbox" id="quitar_fondo"> Quitar fondo</label>
+    <label><input type="checkbox" id="preservar_blancos"> Preservar blancos</label>
+  </div>
+
+  <div class="step" id="color-panel">
+    <h4>2. Colores detectados:</h4>
+    <div id="colores"></div>
+  </div>
+
+  <div class="step" id="formulario-cambio">
+    <button onclick="enviarCambios()">3. Aplicar cambios</button>
+  </div>
+
+  <div id="loader">
+    <p>Procesando imagen...</p>
+    <img src="https://i.gifer.com/ZKZg.gif" width="40">
+  </div>
+
+  <div class="step">
+    <h4>Resultado:</h4>
+    <img id="resultado" src="">
+    <div id="descargar">
+      <a id="link-descarga" href="#" download="resultado.png">Descargar imagen</a>
+    </div>
+  </div>
+</body>
+</html>
