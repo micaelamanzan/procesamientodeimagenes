@@ -2,105 +2,161 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Procesador de Imagen</title>
+  <!-- Enlace a Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Configuración de Tailwind para Inter font -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="/static/script.js" defer></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px auto;
-      max-width: 800px;
+    /* Estilos personalizados para el input de color */
+    .color-box input[type="color"] {
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 100%;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      margin: 0;
+      opacity: 0; /* Ocultar el input nativo para usar el div como click-target */
+      position: absolute;
+      top: 0;
+      left: 0;
     }
-
-    h2, h4 { margin-bottom: 10px; }
-    .step { margin-bottom: 20px; }
-
-    #preview { max-width: 150px; max-height: 150px; display: none; margin-top: 10px; }
 
     .color-box {
-      width: 45px;
-      height: 45px;
-      margin: 5px;
-      border: 2px solid transparent;
       position: relative;
-      display: inline-block;
+      width: 48px; /* Tamaño de la caja de color */
+      height: 48px;
+      margin: 4px; /* Espacio entre las cajas de color */
+      border: 2px solid transparent;
+      border-radius: 8px;
+      overflow: hidden; /* Asegura que el color se mantenga dentro de los bordes redondeados */
+      transition: all 0.2s ease-in-out;
     }
 
-    .color-box input {
-      position: absolute;
-      bottom: -30px;
-      width: 100%;
+    .color-box:hover {
+      border-color: #3B82F6; /* Borde azul al pasar el ratón */
+      transform: scale(1.05);
     }
 
-    #colores { display: none; flex-wrap: wrap; }
-
-    #formulario-cambio { text-align: center; display: none; margin-top: 10px; }
-
-    #formulario-cambio button {
-      padding: 10px 18px;
-      font-size: 15px;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
+    /* Estilo para el botón redondo con flecha */
+    #reload-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px; /* Tamaño del botón */
+      height: 48px;
+      border-radius: 50%; /* Hace el botón redondo */
+      padding: 0; /* Elimina padding para control total del tamaño */
     }
-
-    #loader { display: none; text-align: center; margin-top: 15px; }
-
-    #resultado { max-width: 250px; display: block; margin-top: 15px; }
-
-    #descargar {
-      display: none;
-      margin-top: 10px;
-      text-align: center;
+    #reload-button svg {
+      width: 24px; /* Tamaño del icono de flecha */
+      height: 24px;
+      fill: currentColor; /* Usa el color del texto del botón */
     }
-
-    #descargar a {
-      padding: 8px 16px;
-      background: #28a745;
-      color: white;
-      text-decoration: none;
-      border-radius: 6px;
-    }
-
-    label { display: block; margin: 5px 0; }
   </style>
 </head>
-<body>
+<body class="font-sans bg-gray-100 text-gray-800 p-4 min-h-screen flex items-center justify-center relative">
 
-  <h2>Procesador de Imagen</h2>
+  <main class="bg-white p-6 sm:p-8 rounded-lg shadow-xl w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-fr">
 
-  <div class="step">
-    <label><strong>1. Subí una imagen:</strong></label>
-    <input type="file" id="imagen" accept="image/*">
-    <img id="preview" src="">
-  </div>
+    <!-- Botón de Recargar -->
+    <button id="reload-button" class="absolute top-4 right-4 bg-gray-500 hover:bg-gray-600 text-white transition duration-300 ease-in-out z-10" title="Volver a empezar">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+      </svg>
+    </button>
 
-  <div class="step" id="opciones" style="display:none;">
-    <label><input type="checkbox" id="quitar_fondo"> Quitar fondo</label>
-    <label><input type="checkbox" id="preservar_blancos"> Preservar blancos</label>
-  </div>
+    <!-- Columna 1: Carga Imagen y Previsualización -->
+    <section class="flex flex-col items-center justify-between p-4 border border-gray-200 rounded-lg">
+      <h2 class="text-xl font-semibold mb-2 text-center">Carga tu imagen</h2>
+      <p class="text-sm text-gray-600 mb-3 text-center">Selecciona una imagen PNG o JPG.</p>
 
-  <div class="step" id="color-panel">
-    <h4>2. Colores detectados:</h4>
-    <div id="colores"></div>
-  </div>
+      <label for="imagen" class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md inline-block transition duration-300 ease-in-out">
+        Elegir imagen
+      </label>
+      <input type="file" id="imagen" accept="image/*" class="hidden" />
 
-  <div class="step" id="formulario-cambio">
-    <button onclick="enviarCambios()">3. Aplicar cambios</button>
-  </div>
+      <div class="mt-4 w-full flex justify-center items-center h-40 bg-gray-50 rounded-lg border border-dashed border-gray-300 overflow-hidden flex-grow"> <!-- CAMBIADO: h-40 -->
+        <img id="preview" src="" alt="Previsualización de la imagen subida" class="max-w-full max-h-full object-contain hidden" />
+        <p id="preview-placeholder" class="text-gray-400 text-center">No hay imagen seleccionada</p>
+      </div>
 
-  <div id="loader">
-    <p>Procesando imagen...</p>
-    <img src="https://i.gifer.com/ZKZg.gif" width="40">
-  </div>
+      <p id="error-message" class="text-red-600 text-sm mt-4 hidden"></p>
+    </section>
 
-  <div class="step">
-    <h4>Resultado:</h4>
-    <img id="resultado" src="">
-    <div id="descargar">
-      <a id="link-descarga" href="#" download="resultado.png">Descargar imagen</a>
-    </div>
-  </div>
+    <!-- Columna 2: Opciones de Procesamiento y Colores Detectados -->
+    <section class="flex flex-col items-center justify-between p-4 border border-gray-200 rounded-lg">
+      <h2 class="text-xl font-semibold mb-2 text-center">Opciones</h2>
+
+      <!-- Opciones de procesamiento -->
+      <div id="opciones" class="mb-6 hidden w-full text-center">
+        <p class="text-sm text-gray-600 mb-3">Ajusta las opciones de procesamiento:</p>
+        <div class="space-y-2 inline-flex flex-col items-start">
+          <label class="inline-flex items-center">
+            <input type="checkbox" id="quitar_fondo" class="form-checkbox h-5 w-5 text-blue-600 rounded" />
+            <span class="ml-2 text-gray-700">Quitar fondo</span>
+          </label>
+          <label class="inline-flex items-center">
+            <input type="checkbox" id="preservar_blancos" class="form-checkbox h-5 w-5 text-blue-600 rounded" />
+            <span class="ml-2 text-gray-700">Preservar blancos</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Colores detectados -->
+      <div id="color-panel" class="mb-6 hidden flex-grow w-full">
+        <p class="text-sm text-gray-600 mb-3 text-center">Selecciona un nuevo color para cada uno de los detectados:</p>
+        <div id="colores" class="grid grid-cols-4 gap-2 p-2 bg-gray-50 rounded-md border border-gray-200 justify-items-center">
+          <!-- Los color-box se insertarán aquí por JS -->
+        </div>
+      </div>
+
+      <!-- Botón Aplicar cambios -->
+      <div id="aplicar-cambios-container" class="text-center mt-auto hidden w-full">
+        <button id="aplicar-cambios-btn-final" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md transition duration-300 ease-in-out w-full">
+          Aplicar cambios
+        </button>
+      </div>
+
+      <!-- Loader (puede estar en el centro o en la columna de resultado) -->
+      <div id="loader" class="text-center hidden mt-4">
+        <p class="text-gray-700 mb-2">Procesando imagen...</p>
+        <img src="https://i.gifer.com/ZKZg.gif" width="40" alt="Animación de carga" />
+      </div>
+    </section>
+
+    <!-- Columna 3: Resultado -->
+    <section id="resultado-panel" class="flex flex-col items-center justify-between p-4 border border-gray-200 rounded-lg hidden">
+      <h2 class="text-xl font-semibold mb-2 text-center">Resultado</h2>
+      <!-- Contenedor de imagen de resultado con tamaño fijo -->
+      <div class="mt-4 w-full flex justify-center items-center h-38 bg-gray-50 rounded-lg border border-dashed border-gray-300 overflow-hidden flex-grow">
+        <img id="resultado" src="" alt="Imagen procesada" class="max-w-full max-h-full object-contain hidden" />
+      </div>
+      <div id="descargar-buttons" class="flex flex-col items-center space-y-3 mt-4 mt-auto hidden w-full">
+        <a id="link-descarga" href="#" download="resultado.png" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-md transition duration-300 ease-in-out w-full text-center">
+          Descargar imagen
+        </a>
+      </div>
+    </section>
+
+  </main>
+
 </body>
 </html>
